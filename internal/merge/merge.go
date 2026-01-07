@@ -2,6 +2,9 @@
 package merge
 
 import (
+	"reflect"
+
+	"github.com/iancoleman/orderedmap"
 	"github.com/thirteen37/chezmoi-split/internal/format"
 	"github.com/thirteen37/chezmoi-split/internal/path"
 )
@@ -19,7 +22,9 @@ func Merge(handler format.Handler, managed, current any, paths []path.Path) any 
 	result := deepCopy(managed)
 
 	// If no current config, just return managed
-	if current == nil {
+	// Note: We check for typed nil (e.g., (*orderedmap.OrderedMap)(nil))
+	// because interface comparison with nil may fail for typed nil pointers
+	if isNilValue(current) {
 		return result
 	}
 
@@ -35,13 +40,21 @@ func Merge(handler format.Handler, managed, current any, paths []path.Path) any 
 }
 
 // deepCopy creates a deep copy of a value.
-// Works with maps and slices typically found in JSON structures.
+// Works with ordered maps and slices typically found in JSON structures.
 func deepCopy(v any) any {
 	switch val := v.(type) {
-	case map[string]any:
-		result := make(map[string]any, len(val))
-		for k, v := range val {
-			result[k] = deepCopy(v)
+	case *orderedmap.OrderedMap:
+		result := orderedmap.New()
+		for _, k := range val.Keys() {
+			v, _ := val.Get(k)
+			result.Set(k, deepCopy(v))
+		}
+		return result
+	case orderedmap.OrderedMap:
+		result := orderedmap.New()
+		for _, k := range val.Keys() {
+			v, _ := val.Get(k)
+			result.Set(k, deepCopy(v))
 		}
 		return result
 	case []any:
@@ -54,4 +67,17 @@ func deepCopy(v any) any {
 		// Primitives (string, float64, bool, nil) are immutable
 		return val
 	}
+}
+
+// isNilValue checks if v is nil, including typed nil pointers inside interfaces.
+func isNilValue(v any) bool {
+	if v == nil {
+		return true
+	}
+	rv := reflect.ValueOf(v)
+	switch rv.Kind() {
+	case reflect.Ptr, reflect.Map, reflect.Slice, reflect.Interface:
+		return rv.IsNil()
+	}
+	return false
 }

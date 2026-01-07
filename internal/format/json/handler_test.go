@@ -1,9 +1,9 @@
 package json
 
 import (
-	"reflect"
 	"testing"
 
+	"github.com/iancoleman/orderedmap"
 	"github.com/thirteen37/chezmoi-split/internal/format"
 	"github.com/thirteen37/chezmoi-split/internal/path"
 )
@@ -50,27 +50,27 @@ func TestHandler_Parse(t *testing.T) {
 	h := New()
 
 	tests := []struct {
-		name    string
-		input   string
-		opts    format.ParseOptions
-		want    map[string]any
-		wantErr bool
+		name     string
+		input    string
+		opts     format.ParseOptions
+		wantKeys []string
+		wantErr  bool
 	}{
 		{
-			name:  "simple json",
-			input: `{"key": "value"}`,
-			want:  map[string]any{"key": "value"},
+			name:     "simple json",
+			input:    `{"key": "value"}`,
+			wantKeys: []string{"key"},
 		},
 		{
-			name:  "nested json",
-			input: `{"outer": {"inner": "value"}}`,
-			want:  map[string]any{"outer": map[string]any{"inner": "value"}},
+			name:     "nested json",
+			input:    `{"outer": {"inner": "value"}}`,
+			wantKeys: []string{"outer"},
 		},
 		{
-			name:  "json with comments stripped",
-			input: "// comment\n{\"key\": \"value\"}",
-			opts:  format.ParseOptions{StripComments: true},
-			want:  map[string]any{"key": "value"},
+			name:     "json with comments stripped",
+			input:    "// comment\n{\"key\": \"value\"}",
+			opts:     format.ParseOptions{StripComments: true},
+			wantKeys: []string{"key"},
 		},
 		{
 			name:    "invalid json",
@@ -86,8 +86,22 @@ func TestHandler_Parse(t *testing.T) {
 				t.Errorf("Parse() error = %v, wantErr %v", err, tt.wantErr)
 				return
 			}
-			if !tt.wantErr && !reflect.DeepEqual(got, tt.want) {
-				t.Errorf("Parse() = %v, want %v", got, tt.want)
+			if !tt.wantErr {
+				om, ok := got.(*orderedmap.OrderedMap)
+				if !ok {
+					t.Errorf("Parse() returned %T, want *orderedmap.OrderedMap", got)
+					return
+				}
+				gotKeys := om.Keys()
+				if len(gotKeys) != len(tt.wantKeys) {
+					t.Errorf("Parse() got %d keys, want %d", len(gotKeys), len(tt.wantKeys))
+					return
+				}
+				for i, k := range gotKeys {
+					if k != tt.wantKeys[i] {
+						t.Errorf("Parse() key[%d] = %q, want %q", i, k, tt.wantKeys[i])
+					}
+				}
 			}
 		})
 	}
@@ -95,19 +109,22 @@ func TestHandler_Parse(t *testing.T) {
 
 func TestHandler_GetPath(t *testing.T) {
 	h := New()
-	tree := map[string]any{
-		"level1": map[string]any{
-			"level2": map[string]any{
-				"value": "found",
-			},
-		},
-		"simple": "direct",
-	}
+
+	// Build ordered map tree
+	level2 := orderedmap.New()
+	level2.Set("value", "found")
+
+	level1 := orderedmap.New()
+	level1.Set("level2", level2)
+
+	tree := orderedmap.New()
+	tree.Set("level1", level1)
+	tree.Set("simple", "direct")
 
 	tests := []struct {
-		name     string
-		path     []string
-		wantVal  any
+		name      string
+		path      []string
+		wantVal   any
 		wantFound bool
 	}{
 		{
@@ -130,7 +147,7 @@ func TestHandler_GetPath(t *testing.T) {
 		{
 			name:      "partial path to map",
 			path:      []string{"level1", "level2"},
-			wantVal:   map[string]any{"value": "found"},
+			wantVal:   level2,
 			wantFound: true,
 		},
 	}
@@ -142,7 +159,7 @@ func TestHandler_GetPath(t *testing.T) {
 			if found != tt.wantFound {
 				t.Errorf("GetPath() found = %v, want %v", found, tt.wantFound)
 			}
-			if tt.wantFound && !reflect.DeepEqual(got, tt.wantVal) {
+			if tt.wantFound && got != tt.wantVal {
 				t.Errorf("GetPath() = %v, want %v", got, tt.wantVal)
 			}
 		})
@@ -152,48 +169,103 @@ func TestHandler_GetPath(t *testing.T) {
 func TestHandler_SetPath(t *testing.T) {
 	h := New()
 
-	tests := []struct {
-		name    string
-		tree    map[string]any
-		path    []string
-		value   any
-		want    map[string]any
-		wantErr bool
-	}{
-		{
-			name:  "set existing path",
-			tree:  map[string]any{"key": "old"},
-			path:  []string{"key"},
-			value: "new",
-			want:  map[string]any{"key": "new"},
-		},
-		{
-			name:  "set nested path",
-			tree:  map[string]any{"outer": map[string]any{"inner": "old"}},
-			path:  []string{"outer", "inner"},
-			value: "new",
-			want:  map[string]any{"outer": map[string]any{"inner": "new"}},
-		},
-		{
-			name:  "create intermediate maps",
-			tree:  map[string]any{},
-			path:  []string{"a", "b", "c"},
-			value: "deep",
-			want:  map[string]any{"a": map[string]any{"b": map[string]any{"c": "deep"}}},
-		},
+	t.Run("set existing path", func(t *testing.T) {
+		tree := orderedmap.New()
+		tree.Set("key", "old")
+
+		p := path.NewArrayPath([]string{"key"})
+		err := h.SetPath(tree, p, "new")
+		if err != nil {
+			t.Errorf("SetPath() error = %v", err)
+			return
+		}
+
+		got, _ := tree.Get("key")
+		if got != "new" {
+			t.Errorf("SetPath() key = %v, want new", got)
+		}
+	})
+
+	t.Run("set nested path", func(t *testing.T) {
+		inner := orderedmap.New()
+		inner.Set("inner", "old")
+		tree := orderedmap.New()
+		tree.Set("outer", inner)
+
+		p := path.NewArrayPath([]string{"outer", "inner"})
+		err := h.SetPath(tree, p, "new")
+		if err != nil {
+			t.Errorf("SetPath() error = %v", err)
+			return
+		}
+
+		got, _ := inner.Get("inner")
+		if got != "new" {
+			t.Errorf("SetPath() inner = %v, want new", got)
+		}
+	})
+
+	t.Run("create intermediate maps", func(t *testing.T) {
+		tree := orderedmap.New()
+
+		p := path.NewArrayPath([]string{"a", "b", "c"})
+		err := h.SetPath(tree, p, "deep")
+		if err != nil {
+			t.Errorf("SetPath() error = %v", err)
+			return
+		}
+
+		a, _ := tree.Get("a")
+		aMap := a.(*orderedmap.OrderedMap)
+		b, _ := aMap.Get("b")
+		bMap := b.(*orderedmap.OrderedMap)
+		c, _ := bMap.Get("c")
+		if c != "deep" {
+			t.Errorf("SetPath() deep value = %v, want deep", c)
+		}
+	})
+}
+
+func TestHandler_Serialize_PreservesOrder(t *testing.T) {
+	h := New()
+
+	// Create ordered map with specific key order
+	tree := orderedmap.New()
+	tree.Set("zebra", "last")
+	tree.Set("apple", "first")
+	tree.Set("mango", "middle")
+
+	data, err := h.Serialize(tree, format.SerializeOptions{})
+	if err != nil {
+		t.Fatalf("Serialize() error = %v", err)
 	}
 
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			p := path.NewArrayPath(tt.path)
-			err := h.SetPath(tt.tree, p, tt.value)
-			if (err != nil) != tt.wantErr {
-				t.Errorf("SetPath() error = %v, wantErr %v", err, tt.wantErr)
-				return
-			}
-			if !tt.wantErr && !reflect.DeepEqual(tt.tree, tt.want) {
-				t.Errorf("SetPath() tree = %v, want %v", tt.tree, tt.want)
-			}
-		})
+	// The order should be zebra, apple, mango (insertion order)
+	want := "{\n  \"zebra\": \"last\",\n  \"apple\": \"first\",\n  \"mango\": \"middle\"\n}\n"
+	if string(data) != want {
+		t.Errorf("Serialize() = %q, want %q", string(data), want)
+	}
+}
+
+func TestHandler_ParseAndSerialize_PreservesOrder(t *testing.T) {
+	h := New()
+
+	// Parse JSON with specific key order
+	input := `{"zebra": "last", "apple": "first", "mango": "middle"}`
+
+	tree, err := h.Parse([]byte(input), format.ParseOptions{})
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	data, err := h.Serialize(tree, format.SerializeOptions{})
+	if err != nil {
+		t.Fatalf("Serialize() error = %v", err)
+	}
+
+	// The order should be preserved: zebra, apple, mango
+	want := "{\n  \"zebra\": \"last\",\n  \"apple\": \"first\",\n  \"mango\": \"middle\"\n}\n"
+	if string(data) != want {
+		t.Errorf("ParseAndSerialize() = %q, want %q", string(data), want)
 	}
 }
