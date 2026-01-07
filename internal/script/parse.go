@@ -13,7 +13,7 @@ import (
 const CurrentVersion = 1
 
 // SupportedFormats lists the config formats that are currently supported.
-var SupportedFormats = []string{"json", "auto"}
+var SupportedFormats = []string{"json", "toml", "ini", "auto"}
 
 // Script represents a parsed chezmoi-split script.
 type Script struct {
@@ -196,9 +196,17 @@ func splitHeaderAndContent(lines []string) (header, content string) {
 }
 
 // isConfigStart checks if a line looks like the start of config content.
-// Currently only JSON is supported, so we look for '{' or '['.
+// Detects JSON ({ or [), TOML (key = value or [section]), and INI ([section] or key = value).
 func isConfigStart(line string) bool {
-	return strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[")
+	// JSON object or array
+	if strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[") {
+		return true
+	}
+	// TOML/INI key = value pattern (but not a comment)
+	if strings.Contains(line, "=") && !strings.HasPrefix(line, "#") {
+		return true
+	}
+	return false
 }
 
 // isFormatSupported checks if the given format is in the supported list.

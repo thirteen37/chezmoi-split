@@ -24,7 +24,9 @@ When invoked via shebang (`#!/usr/bin/env chezmoi-split`), it reads the script f
 - **`internal/script`**: Parses the script format (version, format, strip-comments, ignore directives, header, and template content)
 - **`internal/merge`**: Core merge algorithm - starts with managed config, overlays values from current config at ignored paths
 - **`internal/format`**: Handler interface for config formats (Parse, Serialize, GetPath, SetPath)
-- **`internal/format/json`**: JSON/JSONC handler implementation with wildcard path support
+- **`internal/format/json`**: JSON/JSONC handler with wildcard path support
+- **`internal/format/toml`**: TOML handler with full nested path support
+- **`internal/format/ini`**: INI handler (section.key paths only, all values as strings)
 - **`internal/path`**: Path selector abstraction for navigating config trees (e.g., `["agent", "default_model"]`)
 
 ### Script Format

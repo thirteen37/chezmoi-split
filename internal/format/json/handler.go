@@ -84,36 +84,42 @@ func (h *Handler) Serialize(tree any, opts format.SerializeOptions) ([]byte, err
 	return append(data, '\n'), nil
 }
 
-// GetPath extracts a value at the given path.
+// GetPath extracts a value at the given path, supporting wildcards.
 func (h *Handler) GetPath(tree any, p path.Path) (any, bool) {
-	current := tree
-	for _, segment := range p.Segments() {
-		om := toOrderedMapPtr(current)
-		if om == nil {
-			return nil, false
-		}
-		val, exists := om.Get(segment)
-		if !exists {
-			return nil, false
-		}
-		current = val
-	}
-	return current, true
+	return getPathWithWildcard(tree, p.Segments(), 0)
 }
 
-// toOrderedMapPtr converts both value and pointer types of OrderedMap to a pointer.
-func toOrderedMapPtr(v any) *orderedmap.OrderedMap {
-	switch val := v.(type) {
-	case *orderedmap.OrderedMap:
-		return val
-	case orderedmap.OrderedMap:
-		return &val
-	default:
-		return nil
+// getPathWithWildcard recursively navigates the tree, handling wildcards.
+func getPathWithWildcard(current any, segments []string, idx int) (any, bool) {
+	if idx >= len(segments) {
+		return current, true
 	}
+
+	segment := segments[idx]
+	om := format.ToOrderedMapPtr(current)
+	if om == nil {
+		return nil, false
+	}
+
+	if segment == "*" {
+		// Wildcard: return first match from any key
+		for _, key := range om.Keys() {
+			val, _ := om.Get(key)
+			if result, ok := getPathWithWildcard(val, segments, idx+1); ok {
+				return result, true
+			}
+		}
+		return nil, false
+	}
+
+	val, exists := om.Get(segment)
+	if !exists {
+		return nil, false
+	}
+	return getPathWithWildcard(val, segments, idx+1)
 }
 
-// SetPath sets a value at the given path.
+// SetPath sets a value at the given path, supporting wildcards.
 // Creates intermediate maps as needed.
 func (h *Handler) SetPath(tree any, p path.Path, value any) error {
 	segments := p.Segments()
@@ -121,28 +127,57 @@ func (h *Handler) SetPath(tree any, p path.Path, value any) error {
 		return fmt.Errorf("empty path")
 	}
 
-	om := toOrderedMapPtr(tree)
+	return setPathWithWildcard(tree, segments, 0, value)
+}
+
+// setPathWithWildcard recursively sets values, handling wildcards.
+func setPathWithWildcard(current any, segments []string, idx int, value any) error {
+	if idx >= len(segments) {
+		return nil
+	}
+
+	om := format.ToOrderedMapPtr(current)
 	if om == nil {
-		return fmt.Errorf("tree is not an ordered map")
+		return fmt.Errorf("cannot navigate into non-map value")
 	}
 
-	// Navigate to parent, creating intermediate maps as needed
-	for _, segment := range segments[:len(segments)-1] {
-		next, exists := om.Get(segment)
-		if !exists {
-			next = orderedmap.New()
-			om.Set(segment, next)
+	segment := segments[idx]
+	isLast := idx == len(segments)-1
+
+	if segment == "*" {
+		// Wildcard: apply to all keys
+		for _, key := range om.Keys() {
+			val, _ := om.Get(key)
+			if isLast {
+				om.Set(key, value)
+			} else {
+				if err := setPathWithWildcard(val, segments, idx+1, value); err != nil {
+					// Continue to other keys even if one fails
+					continue
+				}
+			}
 		}
-		nextMap := toOrderedMapPtr(next)
-		if nextMap == nil {
-			return fmt.Errorf("path segment %q is not a map", segment)
-		}
-		om = nextMap
+		return nil
 	}
 
-	// Set the final value
-	om.Set(segments[len(segments)-1], value)
-	return nil
+	if isLast {
+		om.Set(segment, value)
+		return nil
+	}
+
+	// Navigate deeper, creating intermediate maps if needed
+	next, exists := om.Get(segment)
+	if !exists {
+		next = orderedmap.New()
+		om.Set(segment, next)
+	}
+
+	nextMap := format.ToOrderedMapPtr(next)
+	if nextMap == nil {
+		return fmt.Errorf("path segment %q is not a map", segment)
+	}
+
+	return setPathWithWildcard(nextMap, segments, idx+1, value)
 }
 
 // Ensure Handler implements format.Handler.

@@ -9,7 +9,9 @@ import (
 	"strings"
 
 	"github.com/thirteen37/chezmoi-split/internal/format"
+	formatini "github.com/thirteen37/chezmoi-split/internal/format/ini"
 	formatjson "github.com/thirteen37/chezmoi-split/internal/format/json"
+	formattoml "github.com/thirteen37/chezmoi-split/internal/format/toml"
 	"github.com/thirteen37/chezmoi-split/internal/merge"
 	"github.com/thirteen37/chezmoi-split/internal/script"
 )
@@ -70,8 +72,8 @@ func runAsInterpreter(scriptPath string) error {
 		return fmt.Errorf("failed to read stdin: %w", err)
 	}
 
-	// Create handler (currently only JSON supported)
-	handler := formatjson.New()
+	// Create handler based on format
+	handler := getHandler(scr.Format)
 	parseOpts := format.ParseOptions{StripComments: scr.StripComments}
 
 	// Parse managed config from template
@@ -151,4 +153,17 @@ func getErrorContext(content string, offset int) (line, col int, snippet string)
 	snippet = currentLine + "\n  " + pointer
 
 	return line, col, snippet
+}
+
+// getHandler returns the appropriate format handler based on format name.
+func getHandler(formatName string) format.Handler {
+	switch formatName {
+	case "toml":
+		return formattoml.New()
+	case "ini":
+		return formatini.New()
+	default:
+		// "json" and "auto" both use JSON handler
+		return formatjson.New()
+	}
 }

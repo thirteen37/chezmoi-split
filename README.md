@@ -81,7 +81,7 @@ chmod +x ~/.local/share/chezmoi/dot_config/zed/modify_settings.json.tmpl
 | Directive | Description | Example |
 |-----------|-------------|---------|
 | `version` | Format version (required, must be first) | `# version 1` |
-| `format` | Config format (currently only `json`) | `# format json` |
+| `format` | Config format: `json`, `toml`, or `ini` | `# format json` |
 | `strip-comments` | Strip `//` comments from JSON before parsing | `# strip-comments true` |
 | `ignore` | Path to preserve from current file | `# ignore ["agent", "model"]` |
 
@@ -98,6 +98,10 @@ Ignore paths use JSON array syntax to specify nested keys:
 | `["servers", "*", "enabled"]` | `enabled` field in ALL objects under `servers` |
 
 **Wildcard (`*`)**: Matches any key at that level. Useful for preserving a field across all items in an object.
+
+**Format-specific notes:**
+- **JSON/TOML**: Full nested path support (any depth)
+- **INI**: Paths limited to `["section", "key"]` (2 levels max)
 
 ### Merge behavior
 
@@ -144,12 +148,51 @@ Ignore paths use JSON array syntax to specify nested keys:
 
 The `agent.default_model` is preserved from current because it's ignored, while the rest comes from the managed config.
 
+### TOML example
+
+```
+#!/usr/bin/env chezmoi-split
+# version 1
+# format toml
+# ignore ["user", "preferences"]
+#---
+[server]
+host = "localhost"
+port = 8080
+
+[user]
+name = "default"
+preferences = { theme = "dark" }
+```
+
+TOML supports full nested paths like JSON (e.g., `["server", "tls", "enabled"]`).
+
+### INI example
+
+```
+#!/usr/bin/env chezmoi-split
+# version 1
+# format ini
+# ignore ["database", "password"]
+#---
+[database]
+host = localhost
+port = 3306
+password = default
+
+[server]
+address = 0.0.0.0
+```
+
+INI paths are limited to section and key: `["section", "key"]`.
+
 ## Features
 
 - **Single file**: Directives and template in one modify script
 - **Chezmoi templating**: Full support for secrets, variables, conditionals
+- **Multiple formats**: JSON, TOML, and INI support
 - **JSON/JSONC support**: Can strip `//` comments from JSON files
-- **Header preservation**: Comments before the JSON are passed through to output
+- **Header preservation**: Comments before the config are passed through to output
 - **Wildcard paths**: Use `*` to match any key at a path level
 - **Versioned format**: Built-in versioning for future migrations
 
