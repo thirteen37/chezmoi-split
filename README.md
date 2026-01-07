@@ -27,26 +27,15 @@ Make sure `$GOPATH/bin` (usually `~/go/bin`) is in your `PATH` for the plugin to
 
 ## Usage
 
-### Initialize a split configuration
+Create a modify script in your chezmoi source directory. For example, to manage `~/.config/zed/settings.json`:
 
 ```bash
-chezmoi split init \
-  --template zed-settings.json.tmpl \
-  --target .config/zed/settings.json \
-  --paths '["agent","default_model"]' \
-  --paths '["features","edit_prediction_provider"]' \
-  --strip-comments
-
-# Or from an existing config file:
-chezmoi split init \
-  --from ~/.config/zed/settings.json \
-  --target .config/zed/settings.json \
-  --paths '["agent","default_model"]'
+mkdir -p ~/.local/share/chezmoi/dot_config/zed
+touch ~/.local/share/chezmoi/dot_config/zed/modify_settings.json.tmpl
+chmod +x ~/.local/share/chezmoi/dot_config/zed/modify_settings.json.tmpl
 ```
 
-This creates a single modify script in your chezmoi source directory.
-
-### Generated file format
+### Script format
 
 ```
 #!/usr/bin/env chezmoi-split
@@ -82,19 +71,39 @@ This creates a single modify script in your chezmoi source directory.
 1. **Chezmoi** sees the `.tmpl` suffix and renders all template syntax first
    - `{{ onepasswordRead "..." }}` becomes the actual secret
    - `{{ .chezmoi.homeDir }}` becomes `/Users/you`
-2. **Chezmoi** sees `chezmoi:modify-template` and removes that line
-3. **Chezmoi** executes the script via shebang (`chezmoi-split`)
-4. **chezmoi-split** parses directives and managed config, reads current file from stdin
+2. **Chezmoi** executes the modify script via shebang (`chezmoi-split`)
+3. **chezmoi-split** parses directives (lines starting with `#`) until `#---` separator
+4. **chezmoi-split** reads managed config from template section, current file from stdin
 5. **chezmoi-split** merges them, preserving `ignore` paths from current, outputs result
 
 ### Directives
 
 | Directive | Description | Example |
 |-----------|-------------|---------|
-| `version` | Format version (required, must be first) | `version 1` |
-| `format` | Config format (default: auto-detect) | `format json` |
-| `strip-comments` | Strip // comments from JSON | `strip-comments true` |
-| `ignore` | Path to preserve from current file | `ignore ["agent", "model"]` |
+| `version` | Format version (required, must be first) | `# version 1` |
+| `format` | Config format (currently only `json`) | `# format json` |
+| `strip-comments` | Strip `//` comments from JSON before parsing | `# strip-comments true` |
+| `ignore` | Path to preserve from current file | `# ignore ["agent", "model"]` |
+
+The `#---` line marks the boundary between directives and template content. Lines before the JSON (like `// comments`) are preserved in the output.
+
+### Ignore paths
+
+Ignore paths use JSON array syntax to specify nested keys:
+
+| Path | Matches |
+|------|---------|
+| `["agent"]` | The entire `agent` object |
+| `["agent", "default_model"]` | Only `agent.default_model` |
+| `["servers", "*", "enabled"]` | `enabled` field in ALL objects under `servers` |
+
+**Wildcard (`*`)**: Matches any key at that level. Useful for preserving a field across all items in an object.
+
+### Merge behavior
+
+- **Ignored path exists in current**: Value from current file is used
+- **Ignored path missing in current**: Value from managed config is used (not deleted)
+- **Path not ignored**: Value from managed config always wins
 
 ### Example
 
@@ -140,7 +149,8 @@ The `agent.default_model` is preserved from current because it's ignored, while 
 - **Single file**: Directives and template in one modify script
 - **Chezmoi templating**: Full support for secrets, variables, conditionals
 - **JSON/JSONC support**: Can strip `//` comments from JSON files
-- **Nested paths**: Supports deep path selectors like `["context_servers", "mcp-server", "enabled"]`
+- **Header preservation**: Comments before the JSON are passed through to output
+- **Wildcard paths**: Use `*` to match any key at a path level
 - **Versioned format**: Built-in versioning for future migrations
 
 ## License

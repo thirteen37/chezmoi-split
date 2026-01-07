@@ -166,6 +166,16 @@ format json
 `,
 			wantErr: true,
 		},
+		{
+			name: "unsupported format",
+			content: `#!/usr/bin/env chezmoi-split
+# version 1
+# format yaml
+#---
+{"key": "value"}
+`,
+			wantErr: true,
+		},
 	}
 
 	for _, tt := range tests {

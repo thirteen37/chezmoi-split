@@ -2,12 +2,14 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
 	"os"
+	"strings"
 
 	"github.com/thirteen37/chezmoi-split/internal/format"
-	"github.com/thirteen37/chezmoi-split/internal/format/json"
+	formatjson "github.com/thirteen37/chezmoi-split/internal/format/json"
 	"github.com/thirteen37/chezmoi-split/internal/merge"
 	"github.com/thirteen37/chezmoi-split/internal/script"
 )
@@ -69,13 +71,13 @@ func runAsInterpreter(scriptPath string) error {
 	}
 
 	// Create handler (currently only JSON supported)
-	handler := json.New()
+	handler := formatjson.New()
 	parseOpts := format.ParseOptions{StripComments: scr.StripComments}
 
 	// Parse managed config from template
 	managed, err := handler.Parse([]byte(scr.Template), parseOpts)
 	if err != nil {
-		return fmt.Errorf("failed to parse managed config: %w", err)
+		return formatJSONError("managed config (in script)", scr.Template, err)
 	}
 
 	// Parse current config (may be empty)
@@ -104,4 +106,49 @@ func runAsInterpreter(scriptPath string) error {
 
 	_, err = os.Stdout.Write(output)
 	return err
+}
+
+// formatJSONError creates a more helpful error message for JSON parse errors.
+func formatJSONError(context, content string, err error) error {
+	// Try to extract position from JSON syntax error
+	if syntaxErr, ok := err.(*json.SyntaxError); ok {
+		offset := int(syntaxErr.Offset)
+		line, col, snippet := getErrorContext(content, offset)
+		return fmt.Errorf("failed to parse %s: %v\n  at line %d, column %d:\n  %s", context, syntaxErr, line, col, snippet)
+	}
+
+	// Generic error
+	return fmt.Errorf("failed to parse %s: %w", context, err)
+}
+
+// getErrorContext returns line number, column, and a snippet around the error position.
+func getErrorContext(content string, offset int) (line, col int, snippet string) {
+	if offset < 0 || offset > len(content) {
+		return 1, 1, ""
+	}
+
+	// Count lines and find column
+	line = 1
+	lineStart := 0
+	for i := 0; i < offset && i < len(content); i++ {
+		if content[i] == '\n' {
+			line++
+			lineStart = i + 1
+		}
+	}
+	col = offset - lineStart + 1
+
+	// Extract the line containing the error
+	lineEnd := lineStart
+	for lineEnd < len(content) && content[lineEnd] != '\n' {
+		lineEnd++
+	}
+
+	currentLine := content[lineStart:lineEnd]
+
+	// Create snippet with pointer
+	pointer := strings.Repeat(" ", col-1) + "^"
+	snippet = currentLine + "\n  " + pointer
+
+	return line, col, snippet
 }

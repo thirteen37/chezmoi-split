@@ -12,6 +12,9 @@ import (
 // CurrentVersion is the latest supported script format version.
 const CurrentVersion = 1
 
+// SupportedFormats lists the config formats that are currently supported.
+var SupportedFormats = []string{"json", "auto"}
+
 // Script represents a parsed chezmoi-split script.
 type Script struct {
 	Version       int
@@ -106,6 +109,9 @@ func Parse(content string) (*Script, error) {
 			if !versionSeen {
 				return nil, fmt.Errorf("line %d: version directive must come first", lineNum)
 			}
+			if !isFormatSupported(value) {
+				return nil, fmt.Errorf("line %d: unsupported format %q (supported: %v)", lineNum, value, SupportedFormats)
+			}
 			script.Format = value
 
 		case "strip-comments":
@@ -189,20 +195,16 @@ func splitHeaderAndContent(lines []string) (header, content string) {
 	return strings.Join(headerLines, "\n"), strings.Join(contentLines, "\n")
 }
 
-// isConfigStart checks if a line looks like the start of config content (JSON/YAML).
+// isConfigStart checks if a line looks like the start of config content.
+// Currently only JSON is supported, so we look for '{' or '['.
 func isConfigStart(line string) bool {
-	// JSON object or array
-	if strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[") {
-		return true
-	}
-	// YAML document marker
-	if line == "---" {
-		return true
-	}
-	// YAML key-value (word followed by colon)
-	if len(line) > 0 && !strings.HasPrefix(line, "//") && !strings.HasPrefix(line, "#") {
-		// If it contains a colon and doesn't look like a comment, it's likely YAML
-		if colonIdx := strings.Index(line, ":"); colonIdx > 0 {
+	return strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[")
+}
+
+// isFormatSupported checks if the given format is in the supported list.
+func isFormatSupported(format string) bool {
+	for _, f := range SupportedFormats {
+		if f == format {
 			return true
 		}
 	}
