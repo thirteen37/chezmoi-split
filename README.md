@@ -13,8 +13,8 @@ Some applications (like Zed, VS Code, etc.) modify their configuration files at 
 
 `chezmoi-split` solves this by:
 
-1. Allowing you to define which parts of the config are "app-owned"
-2. Generating modify scripts that merge chezmoi-managed config with app-owned paths
+1. Acting as a script interpreter for chezmoi modify files
+2. Merging chezmoi-managed config with app-owned paths from the current file
 3. Preserving app's runtime changes while still managing the base configuration
 
 ## Installation
@@ -36,42 +36,71 @@ chezmoi split init \
   --paths '["agent","default_model"]' \
   --paths '["features","edit_prediction_provider"]' \
   --strip-comments
+
+# Or from an existing config file:
+chezmoi split init \
+  --from ~/.config/zed/settings.json \
+  --target .config/zed/settings.json \
+  --paths '["agent","default_model"]'
 ```
 
-This creates:
-- A modify script in your chezmoi source directory
-- A paths configuration file listing app-owned paths
+This creates a single modify script in your chezmoi source directory.
 
-### Add app-owned paths
+### Generated file format
 
-```bash
-chezmoi split add-path .config/zed/settings.json '["context_servers","OpenDia","enabled"]'
+```
+#!/usr/bin/env chezmoi-split
+version 1
+
+format json
+strip-comments true
+
+ignore ["agent", "default_model"]
+ignore ["features", "edit_prediction_provider"]
+ignore ["context_servers", "*", "enabled"]
+
+chezmoi:modify-template
+{
+  "base_keymap": "VSCode",
+  "vim_mode": true,
+  "context_servers": {
+    "mcp-server-github": {
+      "settings": {
+        "github_personal_access_token": "{{ onepasswordRead "op://Vault/Item/credential" }}"
+      }
+    }
+  },
+  "agent": {
+    "default_model": {
+      "provider": "zed.dev",
+      "model": "claude-sonnet-4"
+    }
+  }
+}
 ```
 
-### Remove app-owned paths
+### How it works
 
-```bash
-chezmoi split remove-path .config/zed/settings.json '["agent","default_model"]'
-```
+1. **Chezmoi** sees the `.tmpl` suffix and renders all template syntax first
+   - `{{ onepasswordRead "..." }}` becomes the actual secret
+   - `{{ .chezmoi.homeDir }}` becomes `/Users/you`
+2. **Chezmoi** sees `chezmoi:modify-template` and removes that line
+3. **Chezmoi** executes the script via shebang (`chezmoi-split`)
+4. **chezmoi-split** parses directives and managed config, reads current file from stdin
+5. **chezmoi-split** merges them, preserving `ignore` paths from current, outputs result
 
-### List app-owned paths
+### Directives
 
-```bash
-chezmoi split list .config/zed/settings.json
-```
-
-## How it works
-
-1. You create a chezmoi template with your managed configuration
-2. `chezmoi split init` generates a modify script that:
-   - Renders your template to get the managed config
-   - Reads the current file (with app's changes)
-   - Merges them, preserving app-owned paths from current
-3. When you run `chezmoi apply`, the modify script runs and produces the merged result
+| Directive | Description | Example |
+|-----------|-------------|---------|
+| `version` | Format version (required, must be first) | `version 1` |
+| `format` | Config format (default: auto-detect) | `format json` |
+| `strip-comments` | Strip // comments from JSON | `strip-comments true` |
+| `ignore` | Path to preserve from current file | `ignore ["agent", "model"]` |
 
 ### Example
 
-**Managed config (template):**
+**Managed config (in script):**
 ```json
 {
   "base_keymap": "VSCode",
@@ -82,7 +111,7 @@ chezmoi split list .config/zed/settings.json
 }
 ```
 
-**Current file (with app changes):**
+**Current file (with app's runtime changes):**
 ```json
 {
   "base_keymap": "VSCode",
@@ -93,7 +122,7 @@ chezmoi split list .config/zed/settings.json
 }
 ```
 
-**App-owned paths:** `["agent", "default_model"]`
+**Ignore paths:** `["agent", "default_model"]`
 
 **Result after merge:**
 ```json
@@ -106,13 +135,15 @@ chezmoi split list .config/zed/settings.json
 }
 ```
 
-The `agent.default_model` is preserved from current because it's app-owned, while the rest comes from the managed template.
+The `agent.default_model` is preserved from current because it's ignored, while the rest comes from the managed config.
 
 ## Features
 
+- **Single file**: Directives and template in one modify script
+- **Chezmoi templating**: Full support for secrets, variables, conditionals
 - **JSON/JSONC support**: Can strip `//` comments from JSON files
 - **Nested paths**: Supports deep path selectors like `["context_servers", "mcp-server", "enabled"]`
-- **Extensible architecture**: Designed to support YAML, TOML, INI in future versions
+- **Versioned format**: Built-in versioning for future migrations
 
 ## License
 
