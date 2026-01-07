@@ -5,19 +5,38 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"path/filepath"
 
-	"github.com/thirteen37/chezmoi-split/internal/cmd"
 	"github.com/thirteen37/chezmoi-split/internal/format"
 	"github.com/thirteen37/chezmoi-split/internal/format/json"
 	"github.com/thirteen37/chezmoi-split/internal/merge"
 	"github.com/thirteen37/chezmoi-split/internal/script"
 )
 
+const usage = `chezmoi-split - merge chezmoi-managed config with app-managed paths
+
+This tool is designed to be used as a script interpreter via shebang.
+Create a modify script in your chezmoi source directory:
+
+  ~/.local/share/chezmoi/dot_config/app/modify_settings.json.tmpl
+
+With contents like:
+
+  #!/usr/bin/env chezmoi-split
+  # version 1
+  # format json
+  # ignore ["path", "to", "preserve"]
+  #---
+  {
+    "your": "config",
+    "with": "{{ .chezmoi.templates }}"
+  }
+
+See https://github.com/thirteen37/chezmoi-split for full documentation.
+`
+
 func main() {
-	// Check if running as interpreter (shebang invocation)
-	// When invoked via shebang: argv[0] = interpreter path, argv[1] = script path
-	if len(os.Args) == 2 && isScriptPath(os.Args[1]) {
+	// Interpreter mode: argv[0] = interpreter, argv[1] = script path
+	if len(os.Args) == 2 {
 		if err := runAsInterpreter(os.Args[1]); err != nil {
 			fmt.Fprintf(os.Stderr, "chezmoi-split: %v\n", err)
 			os.Exit(1)
@@ -25,26 +44,8 @@ func main() {
 		return
 	}
 
-	// Normal CLI mode
-	cmd.Execute()
-}
-
-// isScriptPath checks if the argument looks like a script path (not a subcommand).
-func isScriptPath(arg string) bool {
-	// Subcommands don't contain path separators or start with -
-	if arg == "" || arg[0] == '-' {
-		return false
-	}
-	// If it contains a path separator, it's a path
-	if filepath.IsAbs(arg) || len(arg) > 0 && (arg[0] == '.' || arg[0] == '/') {
-		return true
-	}
-	// Check if it's an existing file
-	info, err := os.Stat(arg)
-	if err == nil && !info.IsDir() {
-		return true
-	}
-	return false
+	// No script provided - show usage
+	fmt.Print(usage)
 }
 
 // runAsInterpreter executes the merge logic when invoked via shebang.
@@ -94,6 +95,11 @@ func runAsInterpreter(scriptPath string) error {
 	output, err := handler.Serialize(result, format.SerializeOptions{})
 	if err != nil {
 		return fmt.Errorf("failed to serialize result: %w", err)
+	}
+
+	// Output header (comments before config) if present
+	if scr.Header != "" {
+		fmt.Println(scr.Header)
 	}
 
 	_, err = os.Stdout.Write(output)

@@ -18,11 +18,13 @@ type Script struct {
 	Format        string
 	StripComments bool
 	IgnorePaths   []path.Path
-	Template      string
+	Header        string // Lines before the config content (comments, etc.)
+	Template      string // The actual config content (JSON/YAML)
 }
 
 // Parse parses a chezmoi-split script from its content.
-// The content is expected to have the chezmoi:modify-template line already removed by chezmoi.
+// Directives are prefixed with '# ' and the template section starts after '#---'.
+// Lines before the actual config content (JSON/YAML) are preserved as Header.
 func Parse(content string) (*Script, error) {
 	script := &Script{
 		Format: "auto", // default to auto-detection
@@ -49,23 +51,34 @@ func Parse(content string) (*Script, error) {
 			continue
 		}
 
-		// Skip blank lines in directive section
 		trimmed := strings.TrimSpace(line)
+
+		// Skip blank lines in directive section
 		if trimmed == "" {
 			continue
 		}
 
-		// Check if this line starts the template (JSON or YAML)
-		if isTemplateStart(trimmed) {
-			inTemplate = true
-			templateLines = append(templateLines, line)
+		// Skip comment-only lines (just "#" with optional whitespace)
+		if trimmed == "#" {
 			continue
 		}
 
+		// Check for separator marking start of template
+		if trimmed == "#---" {
+			inTemplate = true
+			continue
+		}
+
+		// Must be a directive line starting with "# "
+		if !strings.HasPrefix(trimmed, "# ") {
+			return nil, fmt.Errorf("line %d: expected directive (starting with '# ') or separator '#---', got %q", lineNum, trimmed)
+		}
+
 		// Parse directive
-		parts := strings.SplitN(trimmed, " ", 2)
+		directiveLine := strings.TrimPrefix(trimmed, "# ")
+		parts := strings.SplitN(directiveLine, " ", 2)
 		if len(parts) < 2 {
-			return nil, fmt.Errorf("line %d: invalid directive %q", lineNum, trimmed)
+			return nil, fmt.Errorf("line %d: invalid directive %q (missing value)", lineNum, trimmed)
 		}
 
 		directive := parts[0]
@@ -135,32 +148,63 @@ func Parse(content string) (*Script, error) {
 		return nil, fmt.Errorf("no template content found")
 	}
 
-	script.Template = strings.Join(templateLines, "\n")
+	// Separate header lines from actual config content
+	header, template := splitHeaderAndContent(templateLines)
+	script.Header = header
+	script.Template = template
+
+	if script.Template == "" {
+		return nil, fmt.Errorf("no config content found (only header lines)")
+	}
+
 	return script, nil
 }
 
-// isTemplateStart checks if a line looks like the start of template content.
-func isTemplateStart(line string) bool {
-	// JSON
+// splitHeaderAndContent separates header lines (comments, blank lines before config)
+// from the actual config content (JSON/YAML).
+func splitHeaderAndContent(lines []string) (header, content string) {
+	contentStart := -1
+
+	for i, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if isConfigStart(trimmed) {
+			contentStart = i
+			break
+		}
+	}
+
+	if contentStart == -1 {
+		// No config content found, treat everything as header
+		return strings.Join(lines, "\n"), ""
+	}
+
+	if contentStart == 0 {
+		// No header, all content
+		return "", strings.Join(lines, "\n")
+	}
+
+	headerLines := lines[:contentStart]
+	contentLines := lines[contentStart:]
+
+	return strings.Join(headerLines, "\n"), strings.Join(contentLines, "\n")
+}
+
+// isConfigStart checks if a line looks like the start of config content (JSON/YAML).
+func isConfigStart(line string) bool {
+	// JSON object or array
 	if strings.HasPrefix(line, "{") || strings.HasPrefix(line, "[") {
 		return true
 	}
-	// YAML (common indicators)
-	if strings.HasPrefix(line, "---") {
+	// YAML document marker
+	if line == "---" {
 		return true
 	}
-	// YAML key-value (but not our directives)
-	if strings.Contains(line, ":") && !isKnownDirective(strings.SplitN(line, " ", 2)[0]) {
-		return true
-	}
-	return false
-}
-
-// isKnownDirective checks if a word is a known directive.
-func isKnownDirective(word string) bool {
-	switch word {
-	case "version", "format", "strip-comments", "ignore":
-		return true
+	// YAML key-value (word followed by colon)
+	if len(line) > 0 && !strings.HasPrefix(line, "//") && !strings.HasPrefix(line, "#") {
+		// If it contains a colon and doesn't look like a comment, it's likely YAML
+		if colonIdx := strings.Index(line, ":"); colonIdx > 0 {
+			return true
+		}
 	}
 	return false
 }

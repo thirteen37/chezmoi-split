@@ -50,16 +50,14 @@ This creates a single modify script in your chezmoi source directory.
 
 ```
 #!/usr/bin/env chezmoi-split
-version 1
-
-format json
-strip-comments true
-
-ignore ["agent", "default_model"]
-ignore ["features", "edit_prediction_provider"]
-ignore ["context_servers", "*", "enabled"]
-
-chezmoi:modify-template
+# version 1
+# format json
+# strip-comments true
+# ignore ["agent", "default_model"]
+# ignore ["features", "edit_prediction_provider"]
+# ignore ["context_servers", "*", "enabled"]
+#---
+// My comments for the final JSON file
 {
   "base_keymap": "VSCode",
   "vim_mode": true,
