@@ -244,7 +244,7 @@ key = "value"
 	oldStdin := os.Stdin
 	r, w, _ := os.Pipe()
 	os.Stdin = r
-	w.WriteString("")
+	_, _ = w.WriteString("")
 	w.Close()
 	defer func() { os.Stdin = oldStdin }()
 
@@ -276,7 +276,7 @@ key = value
 	oldStdin := os.Stdin
 	r, w, _ := os.Pipe()
 	os.Stdin = r
-	w.WriteString("")
+	_, _ = w.WriteString("")
 	w.Close()
 	defer func() { os.Stdin = oldStdin }()
 
@@ -324,7 +324,7 @@ func runIntegrationTestGetResult(t *testing.T, script, current string) string {
 	stdinR, stdinW, _ := os.Pipe()
 	os.Stdin = stdinR
 	go func() {
-		stdinW.WriteString(current)
+		_, _ = stdinW.WriteString(current)
 		stdinW.Close()
 	}()
 
