@@ -11,6 +11,7 @@ import (
 	"github.com/thirteen37/chezmoi-split/internal/format"
 	formatini "github.com/thirteen37/chezmoi-split/internal/format/ini"
 	formatjson "github.com/thirteen37/chezmoi-split/internal/format/json"
+	formatplaintext "github.com/thirteen37/chezmoi-split/internal/format/plaintext"
 	formattoml "github.com/thirteen37/chezmoi-split/internal/format/toml"
 	"github.com/thirteen37/chezmoi-split/internal/merge"
 	"github.com/thirteen37/chezmoi-split/internal/script"
@@ -66,10 +67,20 @@ func runAsInterpreter(scriptPath string) error {
 		return fmt.Errorf("failed to parse script: %w", err)
 	}
 
+	// Print any warnings from parsing
+	for _, warning := range scr.Warnings {
+		fmt.Fprintf(os.Stderr, "chezmoi-split: warning: %s\n", warning)
+	}
+
 	// Read current file from stdin
 	currentData, err := io.ReadAll(os.Stdin)
 	if err != nil {
 		return fmt.Errorf("failed to read stdin: %w", err)
+	}
+
+	// Handle plaintext format separately (uses block-based merging)
+	if scr.Format == "plaintext" {
+		return runPlaintextMerge(scr, currentData)
 	}
 
 	// Create handler based on format
@@ -104,6 +115,48 @@ func runAsInterpreter(scriptPath string) error {
 	// Output header (comments before config) if present
 	if scr.Header != "" {
 		fmt.Println(scr.Header)
+	}
+
+	_, err = os.Stdout.Write(output)
+	return err
+}
+
+// runPlaintextMerge handles plaintext format using block-based merging.
+func runPlaintextMerge(scr *script.Script, currentData []byte) error {
+	// Resolve comment prefix (preset name or literal)
+	commentPrefix := formatplaintext.ResolveCommentPrefix(scr.CommentPrefix)
+	if commentPrefix == "" {
+		commentPrefix = "#" // default
+	}
+
+	handler := formatplaintext.New(commentPrefix)
+
+	// Parse managed (template)
+	// Note: For plaintext format, script.Template contains everything after #---
+	// (the parser doesn't use header/content separation for plaintext)
+	managedAny, err := handler.Parse([]byte(scr.Template), format.ParseOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to parse managed config: %w", err)
+	}
+	managed := managedAny.(*formatplaintext.ParsedConfig)
+
+	// Parse current (may be empty or have no markers)
+	var current *formatplaintext.ParsedConfig
+	if len(currentData) > 0 {
+		currentAny, err := handler.Parse(currentData, format.ParseOptions{})
+		if err == nil {
+			current = currentAny.(*formatplaintext.ParsedConfig)
+		}
+		// Ignore parse errors - current may have no markers
+	}
+
+	// Merge using block-based logic
+	result := handler.MergeBlocks(managed, current)
+
+	// Serialize and output
+	output, err := handler.Serialize(result, format.SerializeOptions{})
+	if err != nil {
+		return fmt.Errorf("failed to serialize: %w", err)
 	}
 
 	_, err = os.Stdout.Write(output)

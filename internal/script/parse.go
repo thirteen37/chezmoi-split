@@ -13,16 +13,18 @@ import (
 const CurrentVersion = 1
 
 // SupportedFormats lists the config formats that are currently supported.
-var SupportedFormats = []string{"json", "toml", "ini", "auto"}
+var SupportedFormats = []string{"json", "toml", "ini", "plaintext", "auto"}
 
 // Script represents a parsed chezmoi-split script.
 type Script struct {
 	Version       int
 	Format        string
 	StripComments bool
+	CommentPrefix string // For plaintext format: comment prefix (e.g., "#", "\"")
 	IgnorePaths   []path.Path
-	Header        string // Lines before the config content (comments, etc.)
-	Template      string // The actual config content (JSON/YAML)
+	Header        string   // Lines before the config content (comments, etc.)
+	Template      string   // The actual config content (JSON/YAML)
+	Warnings      []string // Non-fatal warnings encountered during parsing
 }
 
 // Parse parses a chezmoi-split script from its content.
@@ -127,6 +129,13 @@ func Parse(content string) (*Script, error) {
 				return nil, fmt.Errorf("line %d: strip-comments must be true or false", lineNum)
 			}
 
+		case "comment-prefix":
+			if !versionSeen {
+				return nil, fmt.Errorf("line %d: version directive must come first", lineNum)
+			}
+			// Store the raw value; resolution to actual prefix happens in main
+			script.CommentPrefix = value
+
 		case "ignore":
 			if !versionSeen {
 				return nil, fmt.Errorf("line %d: version directive must come first", lineNum)
@@ -152,6 +161,22 @@ func Parse(content string) (*Script, error) {
 
 	if len(templateLines) == 0 {
 		return nil, fmt.Errorf("no template content found")
+	}
+
+	// For plaintext format, treat everything after #--- as template content
+	// (no header/content separation based on config patterns)
+	if script.Format == "plaintext" {
+		script.Template = strings.Join(templateLines, "\n")
+		// Warn about directives that don't apply to plaintext
+		if len(script.IgnorePaths) > 0 {
+			script.Warnings = append(script.Warnings,
+				"ignore directives are not used with plaintext format; use chezmoi:ignored blocks instead")
+		}
+		if script.StripComments {
+			script.Warnings = append(script.Warnings,
+				"strip-comments is not supported for plaintext format")
+		}
+		return script, nil
 	}
 
 	// Separate header lines from actual config content

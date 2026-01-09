@@ -267,3 +267,150 @@ func TestParse_HeaderAndTemplate(t *testing.T) {
 		t.Errorf("Template = %q, want %q", script.Template, expectedTemplate)
 	}
 }
+
+func TestParse_PlaintextFormat(t *testing.T) {
+	content := `#!/usr/bin/env chezmoi-split
+# version 1
+# format plaintext
+# comment-prefix vim
+#---
+" chezmoi:managed
+set number
+set expandtab
+
+" chezmoi:ignored
+colorscheme gruvbox
+
+" chezmoi:end
+`
+	script, err := Parse(content)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	if script.Format != "plaintext" {
+		t.Errorf("Format = %q, want %q", script.Format, "plaintext")
+	}
+	if script.CommentPrefix != "vim" {
+		t.Errorf("CommentPrefix = %q, want %q", script.CommentPrefix, "vim")
+	}
+	// For plaintext, Header should be empty (no header/content split)
+	if script.Header != "" {
+		t.Errorf("Header = %q, want empty for plaintext", script.Header)
+	}
+	// Template should contain everything after #---
+	if !contains(script.Template, "chezmoi:managed") {
+		t.Errorf("Template should contain chezmoi:managed marker")
+	}
+	if !contains(script.Template, "set number") {
+		t.Errorf("Template should contain 'set number'")
+	}
+}
+
+func TestParse_PlaintextWithIgnoreWarning(t *testing.T) {
+	content := `#!/usr/bin/env chezmoi-split
+# version 1
+# format plaintext
+# ignore ["should", "warn"]
+#---
+# chezmoi:managed
+some content
+# chezmoi:end
+`
+	script, err := Parse(content)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	if len(script.Warnings) == 0 {
+		t.Error("Expected warning for ignore directive with plaintext format")
+	}
+
+	foundWarning := false
+	for _, w := range script.Warnings {
+		if contains(w, "ignore") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Errorf("Expected warning about ignore directives, got: %v", script.Warnings)
+	}
+}
+
+func TestParse_PlaintextWithStripCommentsWarning(t *testing.T) {
+	content := `#!/usr/bin/env chezmoi-split
+# version 1
+# format plaintext
+# strip-comments true
+#---
+# chezmoi:managed
+some content
+# chezmoi:end
+`
+	script, err := Parse(content)
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	if len(script.Warnings) == 0 {
+		t.Error("Expected warning for strip-comments with plaintext format")
+	}
+
+	foundWarning := false
+	for _, w := range script.Warnings {
+		if contains(w, "strip-comments") {
+			foundWarning = true
+			break
+		}
+	}
+	if !foundWarning {
+		t.Errorf("Expected warning about strip-comments, got: %v", script.Warnings)
+	}
+}
+
+func TestParse_CommentPrefixDirective(t *testing.T) {
+	tests := []struct {
+		name       string
+		prefix     string
+		wantPrefix string
+	}{
+		{"preset shell", "shell", "shell"},
+		{"preset vim", "vim", "vim"},
+		{"literal hash", `"#"`, `"#"`},
+		{"literal doubleslash", `"//"`, `"//"`},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			content := `#!/usr/bin/env chezmoi-split
+# version 1
+# format plaintext
+# comment-prefix ` + tt.prefix + `
+#---
+# chezmoi:managed
+content
+`
+			script, err := Parse(content)
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+			if script.CommentPrefix != tt.wantPrefix {
+				t.Errorf("CommentPrefix = %q, want %q", script.CommentPrefix, tt.wantPrefix)
+			}
+		})
+	}
+}
+
+func contains(s, substr string) bool {
+	return len(s) >= len(substr) && (s == substr || len(s) > 0 && containsHelper(s, substr))
+}
+
+func containsHelper(s, substr string) bool {
+	for i := 0; i <= len(s)-len(substr); i++ {
+		if s[i:i+len(substr)] == substr {
+			return true
+		}
+	}
+	return false
+}
