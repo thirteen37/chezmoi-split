@@ -21,12 +21,13 @@ When invoked via shebang (`#!/usr/bin/env chezmoi-split`), it reads the script f
 
 ### Core Packages
 
-- **`internal/script`**: Parses the script format (version, format, strip-comments, ignore directives, header, and template content)
+- **`internal/script`**: Parses the script format (version, format, strip-comments, comment-prefix, ignore directives, header, and template content)
 - **`internal/merge`**: Core merge algorithm - starts with managed config, overlays values from current config at ignored paths
 - **`internal/format`**: Handler interface for config formats (Parse, Serialize, GetPath, SetPath)
 - **`internal/format/json`**: JSON/JSONC handler with wildcard path support
 - **`internal/format/toml`**: TOML handler with full nested path support
 - **`internal/format/ini`**: INI handler (section.key paths only, all values as strings)
+- **`internal/format/plaintext`**: Plaintext handler with block-based merging using markers (`chezmoi:managed`, `chezmoi:ignored`, `chezmoi:end`)
 - **`internal/path`**: Path selector abstraction for navigating config trees (e.g., `["agent", "default_model"]`)
 
 ### Script Format
@@ -44,8 +45,18 @@ Scripts combine directives and template in one file:
 
 Directives are prefixed with `#` and the `#---` separator marks the start of the template content.
 
+Supported formats: `json`, `toml`, `ini`, `plaintext`, `auto` (auto-detect)
+
+For plaintext, use `comment-prefix` directive (presets: `shell`, `vim`, `c`, `lua`, `sql`, `semicolon` or literal value).
+
 ### Merge Algorithm
 
+**Structured formats (JSON, TOML, INI):**
 1. Deep copy managed config as base
 2. For each ignored path, if it exists in current config, overlay that value onto result
 3. This preserves app-managed values while applying chezmoi-managed structure
+
+**Plaintext format:**
+1. Uses block-based merging with markers (`chezmoi:managed`, `chezmoi:ignored`, `chezmoi:end`)
+2. Managed blocks: content always from template
+3. Ignored blocks: content from current config (matched by index), falls back to template defaults

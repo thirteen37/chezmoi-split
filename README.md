@@ -81,9 +81,10 @@ chmod +x ~/.local/share/chezmoi/dot_config/zed/modify_settings.json.tmpl
 | Directive | Description | Example |
 |-----------|-------------|---------|
 | `version` | Format version (required, must be first) | `# version 1` |
-| `format` | Config format: `json`, `toml`, or `ini` | `# format json` |
+| `format` | Config format: `json`, `toml`, `ini`, `plaintext`, or `auto` | `# format json` |
 | `strip-comments` | Strip `//` comments from JSON before parsing | `# strip-comments true` |
-| `ignore` | Path to preserve from current file | `# ignore ["agent", "model"]` |
+| `comment-prefix` | Comment prefix for plaintext format (preset or literal) | `# comment-prefix shell` |
+| `ignore` | Path to preserve from current file (not used for plaintext) | `# ignore ["agent", "model"]` |
 
 The `#---` line marks the boundary between directives and template content. Lines before the JSON (like `// comments`) are preserved in the output.
 
@@ -186,14 +187,46 @@ address = 0.0.0.0
 
 INI paths are limited to section and key: `["section", "key"]`.
 
+### Plaintext example
+
+For line-based config files (shell scripts, vim configs, etc.), use block markers instead of ignore paths:
+
+```
+#!/usr/bin/env chezmoi-split
+# version 1
+# format plaintext
+# comment-prefix shell
+#---
+# chezmoi:managed
+export PATH="$HOME/bin:$PATH"
+export EDITOR="vim"
+
+# chezmoi:ignored
+# User's custom exports go here
+
+# chezmoi:end
+```
+
+**Block markers:**
+- `chezmoi:managed` - Content controlled by chezmoi (from template)
+- `chezmoi:ignored` - Content preserved from current file (app/user-managed)
+- `chezmoi:end` - Marks end of blocks
+
+**Comment prefix presets:** `shell` (#), `vim` ("), `c` (//), `lua` (--), `sql` (--), `semicolon` (;)
+
+You can also use a literal prefix: `# comment-prefix "//"` or `# comment-prefix "'"`
+
+Ignored blocks are matched by index: the 1st ignored block in the template gets content from the 1st ignored block in the current file.
+
 ## Features
 
 - **Single file**: Directives and template in one modify script
 - **Chezmoi templating**: Full support for secrets, variables, conditionals
-- **Multiple formats**: JSON, TOML, and INI support
+- **Multiple formats**: JSON, TOML, INI, and plaintext support (with auto-detection)
 - **JSON/JSONC support**: Can strip `//` comments from JSON files
+- **Plaintext support**: Block-based merging for line-based configs (shell, vim, etc.)
 - **Header preservation**: Comments before the config are passed through to output
-- **Wildcard paths**: Use `*` to match any key at a path level
+- **Wildcard paths**: Use `*` to match any key at a path level (structured formats)
 - **Versioned format**: Built-in versioning for future migrations
 
 ## License
