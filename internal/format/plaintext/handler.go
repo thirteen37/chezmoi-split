@@ -31,18 +31,15 @@ type Block struct {
 // ParsedConfig holds the structured representation of a plaintext config.
 type ParsedConfig struct {
 	Blocks        []Block
-	CommentPrefix string // Used when writing markers
 	TrailingLines []string // Lines after the last chezmoi:end marker
 }
 
 // Handler implements format.Handler for plaintext files.
-type Handler struct {
-	CommentPrefix string
-}
+type Handler struct{}
 
-// New creates a new plaintext handler with the given comment prefix.
-func New(commentPrefix string) *Handler {
-	return &Handler{CommentPrefix: commentPrefix}
+// New creates a new plaintext handler.
+func New() *Handler {
+	return &Handler{}
 }
 
 // Parse reads plaintext bytes and returns a *ParsedConfig.
@@ -53,9 +50,7 @@ func New(commentPrefix string) *Handler {
 // it will be incorrectly treated as a marker. There is no escaping mechanism.
 func (h *Handler) Parse(data []byte, opts format.ParseOptions) (any, error) {
 	lines := strings.Split(string(data), "\n")
-	config := &ParsedConfig{
-		CommentPrefix: h.CommentPrefix,
-	}
+	config := &ParsedConfig{}
 
 	var currentBlock *Block
 	afterEnd := false
@@ -137,16 +132,14 @@ func (h *Handler) Serialize(tree any, opts format.SerializeOptions) ([]byte, err
 		return nil, fmt.Errorf("tree is not a *ParsedConfig")
 	}
 
-	var lines []string
-	hasExplicitMarkers := len(config.Blocks) > 0 && config.Blocks[0].MarkerLine != ""
+	// Check if any block has explicit markers (not just the first one)
+	hasExplicitMarkers := hasAnyExplicitMarkers(config.Blocks)
 
+	var lines []string
 	for _, block := range config.Blocks {
-		// Add marker line
+		// Add marker line if block has one
 		if block.MarkerLine != "" {
 			lines = append(lines, block.MarkerLine)
-		} else if hasExplicitMarkers {
-			// Generate marker for blocks that need one
-			lines = append(lines, h.generateMarker(block.Type))
 		}
 		// Add content lines
 		lines = append(lines, block.Lines...)
@@ -172,12 +165,20 @@ func (h *Handler) Serialize(tree any, opts format.SerializeOptions) ([]byte, err
 	return []byte(result), nil
 }
 
-// generateMarker creates a marker line with the configured comment prefix.
-func (h *Handler) generateMarker(blockType BlockType) string {
-	prefix := h.CommentPrefix
-	if prefix == "" {
-		prefix = "#"
+// hasAnyExplicitMarkers returns true if any block has an explicit marker line.
+func hasAnyExplicitMarkers(blocks []Block) bool {
+	for _, block := range blocks {
+		if block.MarkerLine != "" {
+			return true
+		}
 	}
+	return false
+}
+
+// generateMarker creates a marker line with a hardcoded "#" comment prefix.
+// This is only used for generating the end marker when blocks have explicit markers.
+func (h *Handler) generateMarker(blockType BlockType) string {
+	prefix := "#"
 
 	switch blockType {
 	case BlockManaged:
@@ -213,9 +214,7 @@ func (h *Handler) MergeBlocks(managed, current *ParsedConfig) *ParsedConfig {
 		return current
 	}
 
-	result := &ParsedConfig{
-		CommentPrefix: managed.CommentPrefix,
-	}
+	result := &ParsedConfig{}
 
 	// Extract ignored blocks from current config for index-based matching
 	currentIgnoredBlocks := extractIgnoredBlocks(current)

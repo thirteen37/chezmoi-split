@@ -272,16 +272,15 @@ func TestParse_PlaintextFormat(t *testing.T) {
 	content := `#!/usr/bin/env chezmoi-split
 # version 1
 # format plaintext
-# comment-prefix vim
 #---
-" chezmoi:managed
+# chezmoi:managed
 set number
 set expandtab
 
-" chezmoi:ignored
+# chezmoi:ignored
 colorscheme gruvbox
 
-" chezmoi:end
+# chezmoi:end
 `
 	script, err := Parse(content)
 	if err != nil {
@@ -290,9 +289,6 @@ colorscheme gruvbox
 
 	if script.Format != "plaintext" {
 		t.Errorf("Format = %q, want %q", script.Format, "plaintext")
-	}
-	if script.CommentPrefix != "vim" {
-		t.Errorf("CommentPrefix = %q, want %q", script.CommentPrefix, "vim")
 	}
 	// For plaintext, Header should be empty (no header/content split)
 	if script.Header != "" {
@@ -366,39 +362,6 @@ some content
 	}
 	if !foundWarning {
 		t.Errorf("Expected warning about strip-comments, got: %v", script.Warnings)
-	}
-}
-
-func TestParse_CommentPrefixDirective(t *testing.T) {
-	tests := []struct {
-		name       string
-		prefix     string
-		wantPrefix string
-	}{
-		{"preset shell", "shell", "shell"},
-		{"preset vim", "vim", "vim"},
-		{"literal hash", `"#"`, `"#"`},
-		{"literal doubleslash", `"//"`, `"//"`},
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			content := `#!/usr/bin/env chezmoi-split
-# version 1
-# format plaintext
-# comment-prefix ` + tt.prefix + `
-#---
-# chezmoi:managed
-content
-`
-			script, err := Parse(content)
-			if err != nil {
-				t.Fatalf("Parse() error = %v", err)
-			}
-			if script.CommentPrefix != tt.wantPrefix {
-				t.Errorf("CommentPrefix = %q, want %q", script.CommentPrefix, tt.wantPrefix)
-			}
-		})
 	}
 }
 

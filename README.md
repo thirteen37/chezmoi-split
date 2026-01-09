@@ -83,7 +83,6 @@ chmod +x ~/.local/share/chezmoi/dot_config/zed/modify_settings.json.tmpl
 | `version` | Format version (required, must be first) | `# version 1` |
 | `format` | Config format: `json`, `toml`, `ini`, `plaintext`, or `auto` | `# format json` |
 | `strip-comments` | Strip `//` comments from JSON before parsing | `# strip-comments true` |
-| `comment-prefix` | Comment prefix for plaintext format (preset or literal) | `# comment-prefix shell` |
 | `ignore` | Path to preserve from current file (not used for plaintext) | `# ignore ["agent", "model"]` |
 
 The `#---` line marks the boundary between directives and template content. Lines before the JSON (like `// comments`) are preserved in the output.
@@ -195,7 +194,6 @@ For line-based config files (shell scripts, vim configs, etc.), use block marker
 #!/usr/bin/env chezmoi-split
 # version 1
 # format plaintext
-# comment-prefix shell
 #---
 # chezmoi:managed
 export PATH="$HOME/bin:$PATH"
@@ -212,9 +210,7 @@ export EDITOR="vim"
 - `chezmoi:ignored` - Content preserved from current file (app/user-managed)
 - `chezmoi:end` - Marks end of blocks
 
-**Comment prefix presets:** `shell` (#), `vim` ("), `c` (//), `lua` (--), `sql` (--), `semicolon` (;)
-
-You can also use a literal prefix: `# comment-prefix "//"` or `# comment-prefix "'"`
+Markers are detected via substring matching and are preserved exactly as written in your template. You can format them however you want: `# chezmoi:managed`, `// chezmoi:managed`, `" chezmoi:managed`, etc.
 
 Ignored blocks are matched by index: the 1st ignored block in the template gets content from the 1st ignored block in the current file.
 

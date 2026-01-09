@@ -289,6 +289,124 @@ key = value
 	}
 }
 
+func TestIntegration_Plaintext_Basic(t *testing.T) {
+	script := `#!/usr/bin/env chezmoi-split
+# version 1
+# format plaintext
+#---
+# chezmoi:managed
+export PATH="$HOME/bin:$PATH"
+export EDITOR="vim"
+
+# chezmoi:ignored
+# User's custom exports go here
+
+# chezmoi:end
+`
+	current := `# chezmoi:managed
+export PATH="old"
+export EDITOR="old"
+
+# chezmoi:ignored
+export MY_VAR="user-value"
+export CUSTOM="setting"
+
+# chezmoi:end
+`
+	result := runIntegrationTestGetResult(t, script, current)
+
+	// Managed section should come from template
+	if !strings.Contains(result, `export PATH="$HOME/bin:$PATH"`) {
+		t.Errorf("Expected managed PATH from template, got: %s", result)
+	}
+	if !strings.Contains(result, `export EDITOR="vim"`) {
+		t.Errorf("Expected managed EDITOR from template, got: %s", result)
+	}
+
+	// Ignored section should come from current
+	if !strings.Contains(result, "export MY_VAR=\"user-value\"") {
+		t.Errorf("Expected preserved user variable, got: %s", result)
+	}
+	if !strings.Contains(result, "export CUSTOM=\"setting\"") {
+		t.Errorf("Expected preserved custom setting, got: %s", result)
+	}
+
+	// Should have all markers
+	if !strings.Contains(result, "# chezmoi:managed") {
+		t.Errorf("Missing managed marker in output")
+	}
+	if !strings.Contains(result, "# chezmoi:ignored") {
+		t.Errorf("Missing ignored marker in output")
+	}
+	if !strings.Contains(result, "# chezmoi:end") {
+		t.Errorf("Missing end marker in output")
+	}
+}
+
+func TestIntegration_Plaintext_ContentBeforeFirstMarker(t *testing.T) {
+	// Regression test for Issue #6: end marker should appear even when
+	// content exists before the first explicit marker
+	script := `#!/usr/bin/env chezmoi-split
+# version 1
+# format plaintext
+#---
+# This is an implicit ignored block
+some initial content
+
+# chezmoi:managed
+export MANAGED="from-template"
+
+# chezmoi:end
+`
+	current := `user's custom content
+and more lines
+`
+	result := runIntegrationTestGetResult(t, script, current)
+
+	// User content should be preserved (matched to implicit ignored block)
+	if !strings.Contains(result, "user's custom content") {
+		t.Errorf("Expected preserved user content, got: %s", result)
+	}
+
+	// Managed block should appear
+	if !strings.Contains(result, "# chezmoi:managed") {
+		t.Errorf("Missing managed marker in output")
+	}
+	if !strings.Contains(result, `export MANAGED="from-template"`) {
+		t.Errorf("Expected managed export, got: %s", result)
+	}
+
+	// CRITICAL: End marker must be present (this was the bug)
+	if !strings.Contains(result, "# chezmoi:end") {
+		t.Errorf("BUG: Missing end marker in output:\n%s", result)
+	}
+}
+
+func TestIntegration_Plaintext_NoMarkers(t *testing.T) {
+	// Test implicit mode - no markers in template
+	script := `#!/usr/bin/env chezmoi-split
+# version 1
+# format plaintext
+#---
+just some plain content
+no markers here
+`
+	current := `user's plain content
+multiple lines
+`
+	result := runIntegrationTestGetResult(t, script, current)
+
+	// User content should be preserved
+	if !strings.Contains(result, "user's plain content") {
+		t.Errorf("Expected preserved user content, got: %s", result)
+	}
+
+	// Should NOT have any markers in output
+	if strings.Contains(result, "chezmoi:") {
+		t.Errorf("Should not have markers in implicit mode, got: %s", result)
+	}
+}
+
 // Helper functions
 
 func runIntegrationTest(t *testing.T, script, current, want string) {

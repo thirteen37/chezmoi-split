@@ -20,7 +20,6 @@ type Script struct {
 	Version       int
 	Format        string
 	StripComments bool
-	CommentPrefix string // For plaintext format: comment prefix (e.g., "#", "\"")
 	IgnorePaths   []path.Path
 	Header        string   // Lines before the config content (comments, etc.)
 	Template      string   // The actual config content (JSON/YAML)
@@ -128,13 +127,6 @@ func Parse(content string) (*Script, error) {
 			default:
 				return nil, fmt.Errorf("line %d: strip-comments must be true or false", lineNum)
 			}
-
-		case "comment-prefix":
-			if !versionSeen {
-				return nil, fmt.Errorf("line %d: version directive must come first", lineNum)
-			}
-			// Store the raw value; resolution to actual prefix happens in main
-			script.CommentPrefix = value
 
 		case "ignore":
 			if !versionSeen {

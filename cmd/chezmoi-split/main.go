@@ -123,13 +123,7 @@ func runAsInterpreter(scriptPath string) error {
 
 // runPlaintextMerge handles plaintext format using block-based merging.
 func runPlaintextMerge(scr *script.Script, currentData []byte) error {
-	// Resolve comment prefix (preset name or literal)
-	commentPrefix := formatplaintext.ResolveCommentPrefix(scr.CommentPrefix)
-	if commentPrefix == "" {
-		commentPrefix = "#" // default
-	}
-
-	handler := formatplaintext.New(commentPrefix)
+	handler := formatplaintext.New()
 
 	// Parse managed (template)
 	// Note: For plaintext format, script.Template contains everything after #---
