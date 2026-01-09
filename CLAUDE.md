@@ -23,7 +23,7 @@ When invoked via shebang (`#!/usr/bin/env chezmoi-split`), it reads the script f
 
 ### Core Packages
 
-- **`internal/script`**: Parses the script format (version, format, strip-comments, comment-prefix, ignore directives, header, and template content)
+- **`internal/script`**: Parses the script format (version, format, strip-comments, ignore directives, header, and template content)
 - **`internal/merge`**: Core merge algorithm - starts with managed config, overlays values from current config at ignored paths
 - **`internal/format`**: Handler interface for config formats (Parse, Serialize, GetPath, SetPath)
 - **`internal/format/json`**: JSON/JSONC handler with wildcard path support
@@ -54,7 +54,7 @@ Directives are prefixed with `#` and the `#---` separator marks the start of the
 
 Supported formats: `json`, `toml`, `ini`, `plaintext`, `auto` (auto-detect)
 
-For plaintext, use `comment-prefix` directive. Presets: `shell`, `vim`, `c`, `lua`, `sql`, `semicolon`. Or use a literal value (quotes are stripped, e.g., `comment-prefix "#"`).
+For plaintext format, markers (`chezmoi:managed`, `chezmoi:ignored`, `chezmoi:end`) are preserved exactly as written in the template. You can format them however you want: `# chezmoi:managed`, `// chezmoi:managed`, `" chezmoi:managed`, etc.
 
 ### Format Handler Details
 

@@ -9,7 +9,7 @@ import (
 )
 
 func TestHandler_Parse_WithMarkers(t *testing.T) {
-	h := New("#")
+	h := New()
 
 	input := `# chezmoi:managed
 set number
@@ -48,7 +48,7 @@ colorscheme gruvbox
 }
 
 func TestHandler_Parse_NoMarkers(t *testing.T) {
-	h := New("#")
+	h := New()
 
 	input := `set number
 set expandtab
@@ -77,31 +77,6 @@ colorscheme gruvbox
 	}
 }
 
-func TestHandler_Parse_VimStyle(t *testing.T) {
-	h := New("\"")
-
-	input := `" chezmoi:managed
-set nocompatible
-set number
-
-" chezmoi:ignored
-colorscheme desert
-
-" chezmoi:end
-`
-
-	tree, err := h.Parse([]byte(input), format.ParseOptions{})
-	if err != nil {
-		t.Fatalf("Parse() error = %v", err)
-	}
-
-	config := tree.(*ParsedConfig)
-
-	if len(config.Blocks) != 2 {
-		t.Errorf("Parse() got %d blocks, want 2", len(config.Blocks))
-	}
-}
-
 func TestHandler_Parse_MarkerAnywhereInLine(t *testing.T) {
 	tests := []struct {
 		name  string
@@ -126,10 +101,9 @@ func TestHandler_Parse_MarkerAnywhereInLine(t *testing.T) {
 }
 
 func TestHandler_Serialize(t *testing.T) {
-	h := New("#")
+	h := New()
 
 	config := &ParsedConfig{
-		CommentPrefix: "#",
 		Blocks: []Block{
 			{
 				Type:       BlockManaged,
@@ -142,6 +116,7 @@ func TestHandler_Serialize(t *testing.T) {
 				Lines:      []string{"colorscheme gruvbox"},
 			},
 		},
+		EndMarkerLine: "# chezmoi:end",
 	}
 
 	data, err := h.Serialize(config, format.SerializeOptions{})
@@ -169,10 +144,9 @@ func TestHandler_Serialize(t *testing.T) {
 }
 
 func TestHandler_MergeBlocks_Basic(t *testing.T) {
-	h := New("#")
+	h := New()
 
 	managed := &ParsedConfig{
-		CommentPrefix: "#",
 		Blocks: []Block{
 			{
 				Type:       BlockManaged,
@@ -188,7 +162,6 @@ func TestHandler_MergeBlocks_Basic(t *testing.T) {
 	}
 
 	current := &ParsedConfig{
-		CommentPrefix: "#",
 		Blocks: []Block{
 			{
 				Type:       BlockManaged,
@@ -221,10 +194,9 @@ func TestHandler_MergeBlocks_Basic(t *testing.T) {
 }
 
 func TestHandler_MergeBlocks_CurrentNoMarkers(t *testing.T) {
-	h := New("#")
+	h := New()
 
 	managed := &ParsedConfig{
-		CommentPrefix: "#",
 		Blocks: []Block{
 			{
 				Type:       BlockManaged,
@@ -241,7 +213,6 @@ func TestHandler_MergeBlocks_CurrentNoMarkers(t *testing.T) {
 
 	// Current has no markers (implicit ignored block)
 	current := &ParsedConfig{
-		CommentPrefix: "#",
 		Blocks: []Block{
 			{
 				Type:       BlockIgnored,
@@ -260,10 +231,9 @@ func TestHandler_MergeBlocks_CurrentNoMarkers(t *testing.T) {
 }
 
 func TestHandler_MergeBlocks_MissingIgnoredInCurrent(t *testing.T) {
-	h := New("#")
+	h := New()
 
 	managed := &ParsedConfig{
-		CommentPrefix: "#",
 		Blocks: []Block{
 			{
 				Type:       BlockManaged,
@@ -288,10 +258,9 @@ func TestHandler_MergeBlocks_MissingIgnoredInCurrent(t *testing.T) {
 }
 
 func TestHandler_MergeBlocks_MultipleIgnored(t *testing.T) {
-	h := New("#")
+	h := New()
 
 	managed := &ParsedConfig{
-		CommentPrefix: "#",
 		Blocks: []Block{
 			{Type: BlockManaged, MarkerLine: "# chezmoi:managed", Lines: []string{"m1"}},
 			{Type: BlockIgnored, MarkerLine: "# chezmoi:ignored", Lines: []string{"default1"}},
@@ -301,7 +270,6 @@ func TestHandler_MergeBlocks_MultipleIgnored(t *testing.T) {
 	}
 
 	current := &ParsedConfig{
-		CommentPrefix: "#",
 		Blocks: []Block{
 			{Type: BlockManaged, MarkerLine: "# chezmoi:managed", Lines: []string{"old-m1"}},
 			{Type: BlockIgnored, MarkerLine: "# chezmoi:ignored", Lines: []string{"user1"}},
@@ -330,7 +298,7 @@ func TestHandler_MergeBlocks_MultipleIgnored(t *testing.T) {
 }
 
 func TestHandler_GetPath_NotSupported(t *testing.T) {
-	h := New("#")
+	h := New()
 
 	config := &ParsedConfig{}
 	p := path.NewArrayPath([]string{"anything"})
@@ -342,7 +310,7 @@ func TestHandler_GetPath_NotSupported(t *testing.T) {
 }
 
 func TestHandler_SetPath_NotSupported(t *testing.T) {
-	h := New("#")
+	h := New()
 
 	config := &ParsedConfig{}
 	p := path.NewArrayPath([]string{"anything"})
@@ -353,35 +321,8 @@ func TestHandler_SetPath_NotSupported(t *testing.T) {
 	}
 }
 
-func TestResolveCommentPrefix(t *testing.T) {
-	tests := []struct {
-		input string
-		want  string
-	}{
-		{"shell", "#"},
-		{"vim", "\""},
-		{"c", "//"},
-		{"semicolon", ";"},
-		{"lua", "--"},
-		{"#", "#"},
-		{"\"#\"", "#"},
-		{"\"//\"", "//"},
-		{"'--'", "--"},
-		{"custom", "custom"}, // unknown preset, use as-is
-	}
-
-	for _, tt := range tests {
-		t.Run(tt.input, func(t *testing.T) {
-			got := ResolveCommentPrefix(tt.input)
-			if got != tt.want {
-				t.Errorf("ResolveCommentPrefix(%q) = %q, want %q", tt.input, got, tt.want)
-			}
-		})
-	}
-}
-
 func TestHandler_RoundTrip(t *testing.T) {
-	h := New("#")
+	h := New()
 
 	input := `# chezmoi:managed
 set number
@@ -416,5 +357,259 @@ colorscheme gruvbox
 	// Verify structure preserved
 	if len(config.Blocks) != 2 {
 		t.Errorf("Round-trip got %d blocks, want 2", len(config.Blocks))
+	}
+}
+
+func TestHandler_ContentBeforeFirstMarker_PreservesEndMarker(t *testing.T) {
+	// Regression test for Issue #6: End marker preservation with implicit content
+	// When content appears before first marker, the end marker should be preserved
+	h := New()
+
+	input := `implicit content at start
+# chezmoi:managed
+managed content
+# chezmoi:end
+`
+
+	tree, err := h.Parse([]byte(input), format.ParseOptions{})
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	output, err := h.Serialize(tree, format.SerializeOptions{})
+	if err != nil {
+		t.Fatalf("Serialize() error = %v", err)
+	}
+
+	outputStr := string(output)
+
+	// The output should contain the end marker (preserved from input)
+	if !strings.Contains(outputStr, "# chezmoi:end") {
+		t.Errorf("Serialize() missing end marker, got:\n%s", outputStr)
+	}
+
+	// Should have both the implicit content and the managed block marker
+	if !strings.Contains(outputStr, "implicit content at start") {
+		t.Errorf("Serialize() missing implicit content")
+	}
+	if !strings.Contains(outputStr, "# chezmoi:managed") {
+		t.Errorf("Serialize() missing managed marker")
+	}
+}
+
+func TestHandler_MixedMarkers_NoSilentGeneration(t *testing.T) {
+	// Regression test for Issue #2: we should never silently generate markers
+	// If a block doesn't have a MarkerLine, it should be serialized without one
+	// We also don't generate end markers - they must be present in the input
+	h := New()
+
+	// Programmatically create a mixed state
+	// (first block has MarkerLine, second doesn't, no end marker)
+	config := &ParsedConfig{
+		Blocks: []Block{
+			{
+				Type:       BlockManaged,
+				MarkerLine: "# chezmoi:managed",
+				Lines:      []string{"explicit content"},
+			},
+			{
+				Type:       BlockIgnored,
+				MarkerLine: "", // No marker
+				Lines:      []string{"implicit content"},
+			},
+		},
+		// No EndMarkerLine - we should NOT generate one
+	}
+
+	output, err := h.Serialize(config, format.SerializeOptions{})
+	if err != nil {
+		t.Fatalf("Serialize() error = %v", err)
+	}
+
+	outputStr := string(output)
+
+	// Should have the explicit marker from block 1
+	if !strings.Contains(outputStr, "# chezmoi:managed") {
+		t.Errorf("Missing explicit marker from first block")
+	}
+
+	// Should NOT generate markers for block 2 or end marker
+	// Count how many times "chezmoi:" appears - should be 1 (just managed)
+	count := strings.Count(outputStr, "chezmoi:")
+	if count != 1 {
+		t.Errorf("Found %d chezmoi markers, want 1 (only the explicit managed marker), output:\n%s", count, outputStr)
+	}
+
+	// Should have both contents
+	if !strings.Contains(outputStr, "explicit content") {
+		t.Errorf("Missing explicit content")
+	}
+	if !strings.Contains(outputStr, "implicit content") {
+		t.Errorf("Missing implicit content")
+	}
+
+	// Should NOT have end marker (we don't generate it)
+	if strings.Contains(outputStr, "chezmoi:end") {
+		t.Errorf("Should not generate end marker when not in input, got:\n%s", outputStr)
+	}
+}
+
+func TestHandler_RoundTrip_AllMarkerFormats(t *testing.T) {
+	// Verify that ALL markers (managed, ignored, end) are preserved exactly
+	// through parse -> serialize round-trips, regardless of comment style
+	tests := []struct {
+		name  string
+		input string
+	}{
+		{
+			name: "hash style",
+			input: `# chezmoi:managed
+managed content
+# chezmoi:ignored
+ignored content
+# chezmoi:end
+`,
+		},
+		{
+			name: "vim style",
+			input: `" chezmoi:managed
+set number
+" chezmoi:ignored
+colorscheme desert
+" chezmoi:end
+`,
+		},
+		{
+			name: "c style",
+			input: `// chezmoi:managed
+var config = {};
+// chezmoi:ignored
+var user = true;
+// chezmoi:end
+`,
+		},
+		{
+			name: "lua style",
+			input: `-- chezmoi:managed
+local config = {}
+-- chezmoi:ignored
+local user = true
+-- chezmoi:end
+`,
+		},
+		{
+			name: "decorated markers",
+			input: `# --- chezmoi:managed ---
+content
+# --- chezmoi:ignored ---
+more content
+# --- chezmoi:end ---
+`,
+		},
+		{
+			name: "mixed styles (each marker different)",
+			input: `# chezmoi:managed
+content
+// chezmoi:ignored
+more content
+" chezmoi:end
+`,
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			h := New()
+
+			// Parse
+			tree, err := h.Parse([]byte(tt.input), format.ParseOptions{})
+			if err != nil {
+				t.Fatalf("Parse() error = %v", err)
+			}
+
+			// Serialize
+			output, err := h.Serialize(tree, format.SerializeOptions{})
+			if err != nil {
+				t.Fatalf("Serialize() error = %v", err)
+			}
+
+			outputStr := string(output)
+
+			// Extract all marker lines from input
+			inputLines := strings.Split(tt.input, "\n")
+			var expectedMarkers []string
+			for _, line := range inputLines {
+				if strings.Contains(line, "chezmoi:") {
+					expectedMarkers = append(expectedMarkers, line)
+				}
+			}
+
+			// Verify ALL markers are preserved exactly
+			for _, marker := range expectedMarkers {
+				if !strings.Contains(outputStr, marker) {
+					t.Errorf("Marker %q not preserved in output:\n%s",
+						marker, outputStr)
+				}
+			}
+
+			// Extra verification: re-parse and compare
+			tree2, err := h.Parse(output, format.ParseOptions{})
+			if err != nil {
+				t.Fatalf("Re-parse error = %v", err)
+			}
+
+			config1 := tree.(*ParsedConfig)
+			config2 := tree2.(*ParsedConfig)
+
+			// Verify structure is preserved
+			if len(config1.Blocks) != len(config2.Blocks) {
+				t.Errorf("Block count changed: %d -> %d",
+					len(config1.Blocks), len(config2.Blocks))
+			}
+
+			// Verify all block markers are preserved
+			for i, block := range config1.Blocks {
+				if i >= len(config2.Blocks) {
+					break
+				}
+				if block.MarkerLine != config2.Blocks[i].MarkerLine {
+					t.Errorf("Block %d MarkerLine changed: %q -> %q",
+						i, block.MarkerLine, config2.Blocks[i].MarkerLine)
+				}
+			}
+
+			// Verify end marker is preserved
+			if config1.EndMarkerLine != config2.EndMarkerLine {
+				t.Errorf("EndMarkerLine changed: %q -> %q",
+					config1.EndMarkerLine, config2.EndMarkerLine)
+			}
+		})
+	}
+}
+
+func TestHandler_NoEndMarker_NotGenerated(t *testing.T) {
+	h := New()
+
+	// Template with explicit markers but NO end marker
+	input := `# chezmoi:managed
+managed content
+# chezmoi:ignored
+ignored content
+`
+
+	tree, err := h.Parse([]byte(input), format.ParseOptions{})
+	if err != nil {
+		t.Fatalf("Parse() error = %v", err)
+	}
+
+	output, err := h.Serialize(tree, format.SerializeOptions{})
+	if err != nil {
+		t.Fatalf("Serialize() error = %v", err)
+	}
+
+	// Verify NO end marker in output (we don't add it)
+	if strings.Contains(string(output), "chezmoi:end") {
+		t.Errorf("Should NOT generate end marker when template doesn't have one, got:\n%s",
+			string(output))
 	}
 }
