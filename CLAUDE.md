@@ -2,6 +2,8 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**Keep documentation up to date.** When adding new features, formats, directives, or changing behavior, update both this file and README.md.
+
 ## Build & Test Commands
 
 ```bash
@@ -43,20 +45,50 @@ Scripts combine directives and template in one file:
 { "config": "here" }
 ```
 
-Directives are prefixed with `#` and the `#---` separator marks the start of the template content.
+Directives are prefixed with `#` and the `#---` separator marks the start of the template content. Shebang lines (`#!`) are automatically skipped.
+
+**Directive rules:**
+- `version` is required and must be the first directive
+- `format` defaults to `auto` (uses JSON handler) if not specified
+- `ignore` and `strip-comments` emit warnings when used with plaintext format (they don't apply)
 
 Supported formats: `json`, `toml`, `ini`, `plaintext`, `auto` (auto-detect)
 
-For plaintext, use `comment-prefix` directive (presets: `shell`, `vim`, `c`, `lua`, `sql`, `semicolon` or literal value).
+For plaintext, use `comment-prefix` directive. Presets: `shell`, `vim`, `c`, `lua`, `sql`, `semicolon`. Or use a literal value (quotes are stripped, e.g., `comment-prefix "#"`).
+
+### Format Handler Details
+
+**JSON/JSONC:**
+- Preserves key order using ordered maps
+- Wildcard paths (`*`) supported at any level
+- `strip-comments` removes single-line `//` comments
+
+**TOML:**
+- Preserves key order using ordered maps
+- Wildcard paths supported
+- `strip-comments` not supported (returns error)
+
+**INI:**
+- Path depth limited to 2 segments: `["section"]` or `["section", "key"]`
+- All values stored as strings
+- Global keys stored under empty string key (`""`)
+- `strip-comments` not supported (returns error)
+
+**Plaintext:**
+- Marker detection is substring-based (no escape mechanism)
+- Content before any marker is treated as an implicit ignored block
+- Index-based matching: 1st ignored block in template matches 1st ignored block in current
 
 ### Merge Algorithm
 
 **Structured formats (JSON, TOML, INI):**
-1. Deep copy managed config as base
+1. Deep copy managed config as base (preserves ordered maps and slices)
 2. For each ignored path, if it exists in current config, overlay that value onto result
-3. This preserves app-managed values while applying chezmoi-managed structure
+3. If ignored path doesn't exist in current config, keeps the managed value (not deleted)
+4. This preserves app-managed values while applying chezmoi-managed structure
 
 **Plaintext format:**
 1. Uses block-based merging with markers (`chezmoi:managed`, `chezmoi:ignored`, `chezmoi:end`)
 2. Managed blocks: content always from template
 3. Ignored blocks: content from current config (matched by index), falls back to template defaults
+4. If current config has no markers, all content is treated as one implicit ignored block
