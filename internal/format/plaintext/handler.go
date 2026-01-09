@@ -31,6 +31,7 @@ type Block struct {
 // ParsedConfig holds the structured representation of a plaintext config.
 type ParsedConfig struct {
 	Blocks        []Block
+	EndMarkerLine string   // The original end marker line (preserved for output)
 	TrailingLines []string // Lines after the last chezmoi:end marker
 }
 
@@ -84,6 +85,7 @@ func (h *Handler) Parse(data []byte, opts format.ParseOptions) (any, error) {
 				config.Blocks = append(config.Blocks, *currentBlock)
 				currentBlock = nil
 			}
+			config.EndMarkerLine = line // Store the original end marker line
 			afterEnd = true
 
 		default:
@@ -132,9 +134,6 @@ func (h *Handler) Serialize(tree any, opts format.SerializeOptions) ([]byte, err
 		return nil, fmt.Errorf("tree is not a *ParsedConfig")
 	}
 
-	// Check if any block has explicit markers (not just the first one)
-	hasExplicitMarkers := hasAnyExplicitMarkers(config.Blocks)
-
 	var lines []string
 	for _, block := range config.Blocks {
 		// Add marker line if block has one
@@ -145,9 +144,9 @@ func (h *Handler) Serialize(tree any, opts format.SerializeOptions) ([]byte, err
 		lines = append(lines, block.Lines...)
 	}
 
-	// Add end marker if we had explicit markers
-	if hasExplicitMarkers {
-		lines = append(lines, h.generateMarker(BlockEnd))
+	// Add end marker if it was present in the template
+	if config.EndMarkerLine != "" {
+		lines = append(lines, config.EndMarkerLine)
 	}
 
 	// Add trailing lines
@@ -163,33 +162,6 @@ func (h *Handler) Serialize(tree any, opts format.SerializeOptions) ([]byte, err
 		result += "\n"
 	}
 	return []byte(result), nil
-}
-
-// hasAnyExplicitMarkers returns true if any block has an explicit marker line.
-func hasAnyExplicitMarkers(blocks []Block) bool {
-	for _, block := range blocks {
-		if block.MarkerLine != "" {
-			return true
-		}
-	}
-	return false
-}
-
-// generateMarker creates a marker line with a hardcoded "#" comment prefix.
-// This is only used for generating the end marker when blocks have explicit markers.
-func (h *Handler) generateMarker(blockType BlockType) string {
-	prefix := "#"
-
-	switch blockType {
-	case BlockManaged:
-		return prefix + " chezmoi:managed"
-	case BlockIgnored:
-		return prefix + " chezmoi:ignored"
-	case BlockEnd:
-		return prefix + " chezmoi:end"
-	default:
-		return ""
-	}
 }
 
 // GetPath is not supported for plaintext configs.
@@ -214,7 +186,9 @@ func (h *Handler) MergeBlocks(managed, current *ParsedConfig) *ParsedConfig {
 		return current
 	}
 
-	result := &ParsedConfig{}
+	result := &ParsedConfig{
+		EndMarkerLine: managed.EndMarkerLine, // Preserve from template
+	}
 
 	// Extract ignored blocks from current config for index-based matching
 	currentIgnoredBlocks := extractIgnoredBlocks(current)
